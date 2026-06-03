@@ -68,5 +68,4 @@ app.listen(PORT, () => {
   console.log(`Interview backend running on port ${PORT}`)
   console.log(`Health check: http://localhost:${PORT}/health`)
 })
-  console.log(`Health check: http://localhost:${PORT}/health`)
-})
+
