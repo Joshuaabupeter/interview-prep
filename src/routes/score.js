@@ -72,7 +72,7 @@ router.post('/', async (req, res) => {
     }).join('\n\n')
 
     // Call Gemini for scoring
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite' })
 
     const prompt = `You are a senior executive recruiter scoring a mock job interview.
 
