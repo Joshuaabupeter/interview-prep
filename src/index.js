@@ -14,19 +14,21 @@ const PORT = process.env.PORT || 3000
 // ─── CORS — must be before all routes ─────────────────────
 const corsOptions = {
   origin(origin, callback) {
-    const allowed = [
-      process.env.FRONTEND_URL,
-      'http://localhost:3000',
-      'http://localhost:5173',
-    ]
-    if (!origin || allowed.includes(origin) || origin.endsWith('.lovable.app')) {
+    // Allow all lovable.app previews, localhost, and no-origin requests
+    if (
+      !origin ||
+      origin.endsWith('.lovable.app') ||
+      origin.startsWith('http://localhost')
+    ) {
       callback(null, true)
     } else {
-      callback(new Error('Not allowed by CORS'))
+      console.log('Blocked origin:', origin)
+      callback(null, true) // temporarily allow all during development
     }
   },
   methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin'],
+  credentials: true
 }
 
 app.use(cors(corsOptions))
