@@ -7,6 +7,7 @@ const sessionRoutes = require('./routes/session')
 const questionRoutes = require('./routes/questions')
 const transcribeRoutes = require('./routes/transcribe')
 const scoreRoutes = require('./routes/score')
+const speakRoutes = require('./routes/speak')
 
 const app = express()
 const PORT = process.env.PORT || 3000
@@ -92,6 +93,7 @@ app.use('/api/session', sessionRoutes)
 app.use('/api/questions', questionRoutes)
 app.use('/api/transcribe', transcribeRoutes)
 app.use('/api/score', scoreRoutes)
+app.use('/api/speak', speakRoutes)
 
 // ─── 404 Handler ──────────────────────────────────────────
 app.use((req, res) => {
