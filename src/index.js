@@ -10,6 +10,7 @@ const questionRoutes = require('./routes/questions')
 const transcribeRoutes = require('./routes/transcribe')
 const scoreRoutes = require('./routes/score')
 const speakRoutes = require('./routes/speak')
+const paymentRoutes = require('./routes/payment')
 
 const app = express()
 const PORT = process.env.PORT || 3000
@@ -86,6 +87,7 @@ app.use('/api/questions', aiLimiter, questionRoutes)
 app.use('/api/transcribe', transcribeRoutes)
 app.use('/api/score', aiLimiter, scoreRoutes)
 app.use('/api/speak', speakRoutes)
+app.use('/api/payment', paymentRoutes)
 
 // ─── CV Cleanup Cron — runs every hour ────────────────────
 cron.schedule('0 * * * *', async () => {
