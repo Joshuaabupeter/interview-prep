@@ -29,7 +29,6 @@ router.post('/create', async (req, res) => {
 
     // ─── Payment verification ────────────────────────────
     // Only enforce if payment_ref is provided
-    // Remove this block entirely to disable payment gating during testing
     if (payment_ref) {
       const { data: payment, error: paymentError } = await supabase
         .from('payments')
@@ -37,16 +36,10 @@ router.post('/create', async (req, res) => {
         .eq('reference', payment_ref)
         .single()
 
-      if (paymentError || !payment) {
-        return res.status(403).json({
-          error: 'Invalid payment reference.',
-          redirect: '/pricing'
-        })
-      }
-
-      if (payment.credits_remaining <= 0) {
-        return res.status(403).json({
-          error: 'No credits remaining. Please purchase a new session.',
+      // Consolidated check for missing reference, db errors, or insufficient credits
+      if (paymentError || !payment || payment.credits_remaining <= 0) {
+        return res.status(403).json({ 
+          error: 'No credits remaining or invalid payment reference. Please purchase a new session.',
           redirect: '/pricing'
         })
       }
