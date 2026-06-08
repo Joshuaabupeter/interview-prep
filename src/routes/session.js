@@ -84,4 +84,26 @@ router.get('/:id/status', async (req, res) => {
   }
 })
 
+// Verify payment reference has credits
+if (payment_ref) {
+  const { data: payment } = await supabase
+    .from('payments')
+    .select('credits_remaining')
+    .eq('reference', payment_ref)
+    .single()
+
+  if (!payment || payment.credits_remaining <= 0) {
+    return res.status(403).json({ 
+      error: 'No credits remaining. Please purchase a new session.',
+      redirect: '/pricing'
+    })
+  }
+
+  // Deduct one credit
+  await supabase
+    .from('payments')
+    .update({ credits_remaining: payment.credits_remaining - 1 })
+    .eq('reference', payment_ref)
+}
+
 module.exports = router
