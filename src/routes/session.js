@@ -6,8 +6,9 @@ const supabase = require('../lib/supabase')
 // Called by Lovable upload screen on final submit
 router.post('/create', async (req, res) => {
   try {
-    const { email, jd_text, cv_extracted_text, cv_url } = req.body
+    const { email, jd_text, cv_extracted_text, cv_url, payment_ref } = req.body
 
+    // ─── Input validation ────────────────────────────────
     if (!email || !jd_text || !cv_extracted_text) {
       return res.status(400).json({
         error: 'Missing required fields: email, jd_text, cv_extracted_text'
@@ -26,7 +27,40 @@ router.post('/create', async (req, res) => {
       })
     }
 
-    // Create session row
+    // ─── Payment verification ────────────────────────────
+    // Only enforce if payment_ref is provided
+    // Remove this block entirely to disable payment gating during testing
+    if (payment_ref) {
+      const { data: payment, error: paymentError } = await supabase
+        .from('payments')
+        .select('credits_remaining')
+        .eq('reference', payment_ref)
+        .single()
+
+      if (paymentError || !payment) {
+        return res.status(403).json({
+          error: 'Invalid payment reference.',
+          redirect: '/pricing'
+        })
+      }
+
+      if (payment.credits_remaining <= 0) {
+        return res.status(403).json({
+          error: 'No credits remaining. Please purchase a new session.',
+          redirect: '/pricing'
+        })
+      }
+
+      // Deduct one credit
+      const { error: deductError } = await supabase
+        .from('payments')
+        .update({ credits_remaining: payment.credits_remaining - 1 })
+        .eq('reference', payment_ref)
+
+      if (deductError) throw deductError
+    }
+
+    // ─── Create session row ──────────────────────────────
     const { data: session, error: sessionError } = await supabase
       .from('sessions')
       .insert({
@@ -38,7 +72,7 @@ router.post('/create', async (req, res) => {
 
     if (sessionError) throw sessionError
 
-    // Create document row
+    // ─── Create document row ─────────────────────────────
     const { error: docError } = await supabase
       .from('documents')
       .insert({
@@ -83,27 +117,5 @@ router.get('/:id/status', async (req, res) => {
     return res.status(500).json({ error: err.message })
   }
 })
-
-// Verify payment reference has credits
-if (payment_ref) {
-  const { data: payment } = await supabase
-    .from('payments')
-    .select('credits_remaining')
-    .eq('reference', payment_ref)
-    .single()
-
-  if (!payment || payment.credits_remaining <= 0) {
-    return res.status(403).json({ 
-      error: 'No credits remaining. Please purchase a new session.',
-      redirect: '/pricing'
-    })
-  }
-
-  // Deduct one credit
-  await supabase
-    .from('payments')
-    .update({ credits_remaining: payment.credits_remaining - 1 })
-    .eq('reference', payment_ref)
-}
 
 module.exports = router
