@@ -54,7 +54,7 @@ router.post('/verify', async (req, res) => {
     }
 
     // Determine session credits based on plan
-    const credits = plan === 'monthly' ? 999 : 1
+    const credits = plan === 'monthly' ? 50 : 1
 
     // Store verified payment in Supabase
     const { data: payment, error: paymentError } = await supabase
