@@ -174,4 +174,43 @@ router.get('/credits/:reference', async (req, res) => {
   }
 })
 
+// GET /api/payment/recover?email=xxx
+// Lets users recover a paid session they lost
+router.get('/recover', async (req, res) => {
+  try {
+    const { email } = req.query
+
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' })
+    }
+
+    // Find most recent payment with credits remaining
+    const { data, error } = await supabase
+      .from('payments')
+      .select('reference, credits_remaining, plan, created_at')
+      .eq('email', email.toLowerCase().trim())
+      .gt('credits_remaining', 0)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single()
+
+    if (error || !data) {
+      return res.status(404).json({
+        error: 'No active sessions found for this email.'
+      })
+    }
+
+    return res.json({
+      found: true,
+      reference: data.reference,
+      credits_remaining: data.credits_remaining,
+      plan: data.plan
+    })
+
+  } catch (err) {
+    console.error('Payment recovery error:', err)
+    return res.status(500).json({ error: err.message })
+  }
+})
+
 module.exports = router
