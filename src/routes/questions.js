@@ -198,7 +198,7 @@ router.post('/next', async (req, res) => {
       decision.action = 'next'
     } else {
       // Ask Gemini to decide — follow-up or move on
-      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+      const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite'})
 
       const decisionPrompt = `You are conducting a job interview.
 
