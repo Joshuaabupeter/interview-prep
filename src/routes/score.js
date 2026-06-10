@@ -222,12 +222,27 @@ router.post('/', async (req, res) => {
 
     const speechSummary = buildSpeechSummary(speechMetrics)
 
-    // Build Q+A block for Gemini
-    const qaBlock = questions.map(q => {
-      const answer = answers.find(a => a.question_id === q.id)
-      const transcript = answer?.transcript || 'The candidate did not answer this question.'
-      return `QUESTION ${q.position}: ${q.prompt}\nCANDIDATE ANSWER: ${transcript}`
-    }).join('\n\n')
+      // Build Q+A block including follow-ups
+const qaBlock = questions.map(q => {
+  const answer = answers.find(a => a.question_id === q.id)
+  const transcript = answer?.transcript || 'The candidate did not answer.'
+
+  // Find follow-up for this question if any
+  const followupQuestion = allFollowups?.find(
+    fq => fq.parent_question_id === q.id
+  )
+  const followupAnswer = followupQuestion
+    ? answers.find(a => a.question_id === followupQuestion.id)
+    : null
+
+  let block = `QUESTION ${q.position}: ${q.prompt}\nCANDIDATE ANSWER: ${transcript}`
+
+  if (followupQuestion && followupAnswer) {
+    block += `\nFOLLOW-UP: ${followupQuestion.prompt}\nCANDIDATE FOLLOW-UP ANSWER: ${followupAnswer.transcript || 'No answer given.'}`
+  }
+
+  return block
+}).join('\n\n')
 
     // Call Gemini for scoring
     const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite' })
