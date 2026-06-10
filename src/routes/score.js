@@ -7,8 +7,156 @@ const supabase = require('../lib/supabase')
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
 const resend = new Resend(process.env.RESEND_API_KEY)
 
+// ─── Speech Analysis Helper ───────────────────────────────
+const analyzeSpeech = (transcript, durationSeconds) => {
+  if (!transcript || transcript.trim().length === 0) {
+    return {
+      word_count: 0,
+      words_per_minute: 0,
+      wpm_rating: 'No answer',
+      filler_count: 0,
+      filler_words_found: [],
+      filler_rating: 'No answer',
+      answer_length_rating: 'No answer',
+      answer_length_note: 'No answer was recorded'
+    }
+  }
+
+  const words = transcript.trim().split(/\s+/)
+  const wordCount = words.length
+
+  // Words per minute
+  const durationMinutes = durationSeconds ? durationSeconds / 60 : null
+  const wpm = durationMinutes ? Math.round(wordCount / durationMinutes) : null
+
+  let wpmRating = 'Unknown'
+  let wpmNote = ''
+  if (wpm) {
+    if (wpm < 80) {
+      wpmRating = 'Too slow'
+      wpmNote = 'Speaking too slowly can signal nervousness. Aim for 120-150 WPM.'
+    } else if (wpm <= 160) {
+      wpmRating = 'Good pace'
+      wpmNote = 'Your speaking pace is within the ideal interview range.'
+    } else if (wpm <= 200) {
+      wpmRating = 'Slightly fast'
+      wpmNote = 'Try slowing down slightly to give the interviewer time to absorb your answer.'
+    } else {
+      wpmRating = 'Too fast'
+      wpmNote = 'Speaking too quickly can make answers hard to follow. Slow down and pause deliberately.'
+    }
+  }
+
+  // Filler word detection
+  const fillerPatterns = [
+    'um', 'uh', 'uhh', 'umm', 'er', 'err',
+    'you know', 'like', 'basically', 'literally',
+    'right', 'so', 'kind of', 'sort of', 'i mean',
+    'actually', 'honestly', 'to be honest'
+  ]
+
+  const lowerTranscript = transcript.toLowerCase()
+  const foundFillers = []
+  let totalFillerCount = 0
+
+  fillerPatterns.forEach(filler => {
+    const regex = new RegExp(`\\b${filler}\\b`, 'gi')
+    const matches = lowerTranscript.match(regex)
+    if (matches && matches.length > 0) {
+      foundFillers.push({ word: filler, count: matches.length })
+      totalFillerCount += matches.length
+    }
+  })
+
+  // Sort by frequency
+  foundFillers.sort((a, b) => b.count - a.count)
+
+  let fillerRating = 'Excellent'
+  let fillerNote = 'No significant filler words detected.'
+  const fillerRate = wordCount > 0 ? (totalFillerCount / wordCount) * 100 : 0
+
+  if (fillerRate > 15) {
+    fillerRating = 'High'
+    fillerNote = 'Excessive filler words detected. Practice pausing silently instead of filling gaps.'
+  } else if (fillerRate > 8) {
+    fillerRating = 'Moderate'
+    fillerNote = 'Some filler words present. Be more conscious of pause moments.'
+  } else if (fillerRate > 3) {
+    fillerRating = 'Low'
+    fillerNote = 'Minor filler words. Nearly interview-ready on this metric.'
+  }
+
+  // Answer length rating
+  let answerLengthRating = 'Good length'
+  let answerLengthNote = 'Your answer length is appropriate for an interview setting.'
+
+  if (wordCount < 30) {
+    answerLengthRating = 'Too brief'
+    answerLengthNote = 'Answer is too short. Interviewers expect structured responses of at least 60-150 words.'
+  } else if (wordCount < 60) {
+    answerLengthRating = 'Slightly short'
+    answerLengthNote = 'Answer could be more detailed. Add specific examples or outcomes.'
+  } else if (wordCount > 350) {
+    answerLengthRating = 'Too long'
+    answerLengthNote = 'Answer is too long. Keep responses focused and under 2 minutes.'
+  } else if (wordCount > 250) {
+    answerLengthRating = 'Slightly long'
+    answerLengthNote = 'Consider trimming. Concise answers are more memorable.'
+  }
+
+  return {
+    word_count: wordCount,
+    words_per_minute: wpm,
+    wpm_rating: wpmRating,
+    wpm_note: wpmNote,
+    filler_count: totalFillerCount,
+    filler_words_found: foundFillers.slice(0, 5), // top 5 offenders
+    filler_rate_percent: Math.round(fillerRate * 10) / 10,
+    filler_rating: fillerRating,
+    filler_note: fillerNote,
+    answer_length_rating: answerLengthRating,
+    answer_length_note: answerLengthNote
+  }
+}
+
+// ─── Overall Speech Summary Helper ───────────────────────
+const buildSpeechSummary = (speechMetrics) => {
+  const validAnswers = speechMetrics.filter(m => m.word_count > 0)
+  if (validAnswers.length === 0) return null
+
+  const totalFillers = validAnswers.reduce((sum, m) => sum + m.filler_count, 0)
+  const totalWords = validAnswers.reduce((sum, m) => sum + m.word_count, 0)
+  const avgWpm = validAnswers
+    .filter(m => m.words_per_minute)
+    .reduce((sum, m, _, arr) => sum + m.words_per_minute / arr.length, 0)
+
+  // Most used filler words across all answers
+  const allFillers = {}
+  validAnswers.forEach(m => {
+    m.filler_words_found.forEach(f => {
+      allFillers[f.word] = (allFillers[f.word] || 0) + f.count
+    })
+  })
+
+  const topFillers = Object.entries(allFillers)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([word, count]) => ({ word, count }))
+
+  const overallFillerRate = totalWords > 0
+    ? Math.round((totalFillers / totalWords) * 1000) / 10
+    : 0
+
+  return {
+    total_filler_words: totalFillers,
+    overall_filler_rate_percent: overallFillerRate,
+    top_filler_words: topFillers,
+    average_wpm: avgWpm ? Math.round(avgWpm) : null,
+    total_words_spoken: totalWords
+  }
+}
+
 // POST /api/score
-// Called after all 5 answers are recorded — triggers scoring + report
 router.post('/', async (req, res) => {
   const { session_id } = req.body
 
@@ -16,11 +164,9 @@ router.post('/', async (req, res) => {
     return res.status(400).json({ error: 'session_id is required' })
   }
 
-  // Respond immediately — scoring runs in background
   res.status(202).json({ message: 'Scoring started' })
 
   try {
-    // Update status to scoring
     await supabase
       .from('sessions')
       .update({ status: 'scoring' })
@@ -35,10 +181,10 @@ router.post('/', async (req, res) => {
 
     if (qError || !questions.length) throw new Error('Could not fetch questions')
 
-    // Fetch answers
+    // Fetch answers — include duration_seconds
     const { data: answers, error: aError } = await supabase
       .from('answers')
-      .select('question_id, transcript')
+      .select('question_id, transcript, duration_seconds')
       .eq('session_id', session_id)
 
     if (aError) throw new Error('Could not fetch answers')
@@ -52,7 +198,7 @@ router.post('/', async (req, res) => {
 
     if (dError || !doc) throw new Error('Could not fetch job description')
 
-    // Fetch session email
+    // Fetch session
     const { data: session, error: sError } = await supabase
       .from('sessions')
       .select('email, metadata')
@@ -61,8 +207,20 @@ router.post('/', async (req, res) => {
 
     if (sError) throw new Error('Could not fetch session')
 
-    // Get email — handle both direct column and metadata
     const email = session.email || session.metadata?.email
+
+    // ─── Run speech analysis on every answer ─────────────
+    const speechMetrics = questions.map(q => {
+      const answer = answers.find(a => a.question_id === q.id)
+      const transcript = answer?.transcript || ''
+      const duration = answer?.duration_seconds || null
+      return {
+        question_position: q.position,
+        ...analyzeSpeech(transcript, duration)
+      }
+    })
+
+    const speechSummary = buildSpeechSummary(speechMetrics)
 
     // Build Q+A block for Gemini
     const qaBlock = questions.map(q => {
@@ -108,15 +266,10 @@ Exactly this structure:
 
     const result = await model.generateContent(prompt)
     const text = result.response.text().trim()
-
-    const cleaned = text
-      .replace(/```json/gi, '')
-      .replace(/```/g, '')
-      .trim()
-
+    const cleaned = text.replace(/```json/gi, '').replace(/```/g, '').trim()
     const scored = JSON.parse(cleaned)
 
-    // Write report to Supabase
+    // Write report — include speech data in scores
     const { error: reportError } = await supabase
       .from('reports')
       .insert({
@@ -128,7 +281,9 @@ Exactly this structure:
           top_strengths: scored.top_strengths,
           critical_gaps: scored.critical_gaps,
           recommended_actions: scored.recommended_actions,
-          answers: scored.answers
+          answers: scored.answers,
+          speech_summary: speechSummary,
+          speech_per_answer: speechMetrics
         }),
         email_sent: false
       })
@@ -154,8 +309,12 @@ Exactly this structure:
       }
     }
 
-    // Send email if we have an address
+    // Send email
     if (email) {
+      const topFillerText = speechSummary?.top_filler_words?.length
+        ? speechSummary.top_filler_words.map(f => `"${f.word}" (${f.count}x)`).join(', ')
+        : 'None detected'
+
       await resend.emails.send({
         from: process.env.FROM_EMAIL,
         to: email,
@@ -168,22 +327,38 @@ Exactly this structure:
               <span style="font-size: 24px; color: rgba(255,255,255,0.3);">/100</span>
             </h1>
             <p style="font-size: 13px; color: rgba(255,255,255,0.4); margin-bottom: 32px;">Interview Readiness Score — ${scored.job_title}</p>
-            
             <hr style="border: 0.5px solid rgba(255,255,255,0.08); margin-bottom: 32px;" />
-            
             <p style="font-size: 15px; color: rgba(255,255,255,0.7); line-height: 1.7;">${scored.executive_summary}</p>
-            
             <h3 style="font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #c8a96e; margin-top: 32px;">Top Strengths</h3>
             <p style="color: rgba(255,255,255,0.6); line-height: 1.7;">${scored.top_strengths}</p>
-            
             <h3 style="font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #c8a96e; margin-top: 24px;">Critical Gaps</h3>
             <p style="color: rgba(255,255,255,0.6); line-height: 1.7;">${scored.critical_gaps}</p>
-            
             <h3 style="font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #c8a96e; margin-top: 24px;">What To Work On</h3>
             <p style="color: rgba(255,255,255,0.6); line-height: 1.7;">${scored.recommended_actions}</p>
-            
+            ${speechSummary ? `
+            <hr style="border: 0.5px solid rgba(255,255,255,0.08); margin: 32px 0;" />
+            <h3 style="font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: #c8a96e;">Communication Analysis</h3>
+            <table style="width: 100%; border-collapse: collapse; margin-top: 16px;">
+              <tr>
+                <td style="color: rgba(255,255,255,0.4); font-size: 12px; padding: 8px 0;">Total words spoken</td>
+                <td style="color: #fff; font-size: 12px; text-align: right;">${speechSummary.total_words_spoken}</td>
+              </tr>
+              <tr>
+                <td style="color: rgba(255,255,255,0.4); font-size: 12px; padding: 8px 0;">Average speaking pace</td>
+                <td style="color: #fff; font-size: 12px; text-align: right;">${speechSummary.average_wpm ? speechSummary.average_wpm + ' WPM' : 'N/A'}</td>
+              </tr>
+              <tr>
+                <td style="color: rgba(255,255,255,0.4); font-size: 12px; padding: 8px 0;">Filler words used</td>
+                <td style="color: #fff; font-size: 12px; text-align: right;">${speechSummary.total_filler_words} (${speechSummary.overall_filler_rate_percent}% of speech)</td>
+              </tr>
+              <tr>
+                <td style="color: rgba(255,255,255,0.4); font-size: 12px; padding: 8px 0;">Most used fillers</td>
+                <td style="color: #fff; font-size: 12px; text-align: right;">${topFillerText}</td>
+              </tr>
+            </table>
+            ` : ''}
             <div style="margin-top: 40px;">
-              <a href="${process.env.FRONTEND_URL}/results?session=${session_id}" 
+              <a href="${process.env.FRONTEND_URL}/results?session=${session_id}"
                  style="background: #c8a96e; color: #0a0a0f; padding: 14px 32px; text-decoration: none; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase;">
                 View Full Report
               </a>
@@ -192,14 +367,12 @@ Exactly this structure:
         `
       })
 
-      // Mark email sent
       await supabase
         .from('reports')
         .update({ email_sent: true })
         .eq('session_id', session_id)
     }
 
-    // Set session complete
     await supabase
       .from('sessions')
       .update({ status: 'complete' })
@@ -209,7 +382,6 @@ Exactly this structure:
 
   } catch (err) {
     console.error('Scoring error:', err)
-
     await supabase
       .from('sessions')
       .update({ status: 'failed' })
@@ -218,7 +390,6 @@ Exactly this structure:
 })
 
 // GET /api/score/:session_id
-// Called by /results page to fetch the report
 router.get('/:session_id', async (req, res) => {
   try {
     const { session_id } = req.params
@@ -232,7 +403,6 @@ router.get('/:session_id', async (req, res) => {
     if (error) throw error
     if (!data) return res.status(404).json({ error: 'Report not found' })
 
-    // Parse scores JSON back to object
     if (data.scores && typeof data.scores === 'string') {
       data.scores = JSON.parse(data.scores)
     }
