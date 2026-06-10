@@ -181,6 +181,13 @@ router.post('/', async (req, res) => {
 
     if (qError || !questions.length) throw new Error('Could not fetch questions')
 
+    // Fetch follow-up questions
+const { data: allFollowups } = await supabase
+  .from('questions')
+  .select('id, prompt, position, parent_question_id')
+  .eq('session_id', session_id)
+  .eq('is_followup', true)
+
     // Fetch answers — include duration_seconds
     const { data: answers, error: aError } = await supabase
       .from('answers')
