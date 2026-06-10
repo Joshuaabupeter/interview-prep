@@ -14,18 +14,14 @@ router.post('/generate', async (req, res) => {
     return res.status(400).json({ error: 'session_id is required' })
   }
 
-  // Respond immediately so Lovable does not time out
-  // Question generation runs in the background
   res.status(202).json({ message: 'Question generation started' })
 
   try {
-    // Update status to processing
     await supabase
       .from('sessions')
       .update({ status: 'processing' })
       .eq('id', session_id)
 
-    // Fetch CV and JD
     const { data: doc, error: docError } = await supabase
       .from('documents')
       .select('cv_extracted_text, jd_text')
@@ -44,7 +40,6 @@ router.post('/generate', async (req, res) => {
       throw new Error('Job description is too short or missing')
     }
 
-    // Call Gemini
     const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite' })
 
     const prompt = `You are a senior recruiter and executive interview coach.
@@ -60,7 +55,7 @@ Rules for questions:
 - Direct and pressure-testing, no soft language
 - Sound exactly like a real human interviewer speaking out loud
 - No apostrophes, no double quotes, no backslashes, no special characters
-- Write all contractions as full words: use "you are" not "you're", "do not" not "don't"
+- Write all contractions as full words: use "you are" not "you're"
 - Use only plain letters, numbers, spaces, commas, and question marks
 - Mix of situational, competency, and skills-gap questions
 
@@ -85,8 +80,6 @@ Exactly this structure:
 
     const result = await model.generateContent(prompt)
     const text = result.response.text().trim()
-
-    // Strip any markdown code blocks if Gemini adds them
     const cleaned = text
       .replace(/```json/gi, '')
       .replace(/```/g, '')
@@ -98,11 +91,11 @@ Exactly this structure:
       throw new Error('Gemini returned invalid question format')
     }
 
-    // Write all questions to Supabase in one batch
     const questionRows = parsed.questions.map(q => ({
       session_id,
       prompt: q.question,
-      position: q.order
+      position: q.order,
+      is_followup: false
     }))
 
     const { error: insertError } = await supabase
@@ -111,18 +104,15 @@ Exactly this structure:
 
     if (insertError) throw insertError
 
-    // Update session status to interview_ready
     await supabase
       .from('sessions')
-      .update({ status: 'interview_ready' })
+      .update({ status: 'interview_ready', current_position: 1, total_turns: 0 })
       .eq('id', session_id)
 
     console.log(`Questions generated successfully for session ${session_id}`)
 
   } catch (err) {
     console.error('Question generation error:', err)
-
-    // Mark session as failed so frontend stops polling
     await supabase
       .from('sessions')
       .update({ status: 'failed' })
@@ -138,7 +128,7 @@ router.get('/:session_id', async (req, res) => {
 
     const { data, error } = await supabase
       .from('questions')
-      .select('id, prompt, position')
+      .select('id, prompt, position, is_followup, parent_question_id')
       .eq('session_id', session_id)
       .order('position', { ascending: true })
 
@@ -148,6 +138,189 @@ router.get('/:session_id', async (req, res) => {
 
   } catch (err) {
     console.error('Fetch questions error:', err)
+    return res.status(500).json({ error: err.message })
+  }
+})
+
+// POST /api/questions/next
+// Called after each answer — AI decides follow-up or move on
+router.post('/next', async (req, res) => {
+  try {
+    const { session_id, question_id, transcript } = req.body
+
+    if (!session_id || !question_id || !transcript) {
+      return res.status(400).json({
+        error: 'session_id, question_id, and transcript are required'
+      })
+    }
+
+    // Fetch current session state
+    const { data: session, error: sessionError } = await supabase
+      .from('sessions')
+      .select('current_position, total_turns')
+      .eq('id', session_id)
+      .single()
+
+    if (sessionError || !session) throw new Error('Session not found')
+
+    const { current_position, total_turns } = session
+
+    // Fetch the current question
+    const { data: currentQuestion, error: qError } = await supabase
+      .from('questions')
+      .select('id, prompt, position, is_followup, parent_question_id')
+      .eq('id', question_id)
+      .single()
+
+    if (qError || !currentQuestion) throw new Error('Question not found')
+
+    // Fetch all main questions for this session
+    const { data: allQuestions } = await supabase
+      .from('questions')
+      .select('id, prompt, position, is_followup')
+      .eq('session_id', session_id)
+      .eq('is_followup', false)
+      .order('position', { ascending: true })
+
+    const totalMainQuestions = allQuestions?.length || 5
+    const maxTurns = totalMainQuestions * 2 // 1 follow-up max per question
+
+    // Hard limits — always move on if:
+    // 1. Already did a follow-up on this question
+    // 2. Hit max turns
+    // 3. On the last main question with no follow-up yet
+    const alreadyHadFollowup = currentQuestion.is_followup
+    const hitMaxTurns = total_turns >= maxTurns
+
+    let decision = { action: 'followup', followup_question: null }
+
+    if (alreadyHadFollowup || hitMaxTurns) {
+      decision.action = 'next'
+    } else {
+      // Ask Gemini to decide — follow-up or move on
+      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+
+      const decisionPrompt = `You are conducting a job interview.
+
+You just asked this question:
+"${currentQuestion.prompt}"
+
+The candidate answered:
+"${transcript}"
+
+Decide: does this answer warrant a follow-up question, or was it sufficient to move on?
+
+Rules:
+- Follow up ONLY if the answer was vague, incomplete, or dodged the core of the question
+- Do NOT follow up if the answer was clear, specific, and addressed the question well
+- Follow-up questions must dig deeper into the SAME topic — not introduce a new area
+- Write follow-up questions as clean spoken sentences, no apostrophes, no special characters
+- Maximum one follow-up per main question
+
+Return ONLY valid JSON. No markdown. No explanation.
+{
+  "should_followup": true,
+  "reason": "Answer was vague about specific metrics",
+  "followup_question": "You mentioned managing a team but did not specify the size or outcomes. How many people did you manage and what measurable results did your leadership produce?"
+}
+
+OR if moving on:
+{
+  "should_followup": false,
+  "reason": "Answer was specific and complete",
+  "followup_question": null
+}`
+
+      const result = await model.generateContent(decisionPrompt)
+      const text = result.response.text().trim()
+      const cleaned = text.replace(/```json/gi, '').replace(/```/g, '').trim()
+      const geminiDecision = JSON.parse(cleaned)
+
+      if (geminiDecision.should_followup && geminiDecision.followup_question) {
+        decision.action = 'followup'
+        decision.followup_question = geminiDecision.followup_question
+        decision.reason = geminiDecision.reason
+      } else {
+        decision.action = 'next'
+        decision.reason = geminiDecision.reason
+      }
+    }
+
+    // If following up — insert the follow-up question into DB
+    if (decision.action === 'followup' && decision.followup_question) {
+      const parentId = currentQuestion.is_followup
+        ? currentQuestion.parent_question_id
+        : currentQuestion.id
+
+      // Position as decimal so it sorts between main questions
+      const followupPosition = currentQuestion.position + 0.5
+
+      const { data: newQuestion, error: insertError } = await supabase
+        .from('questions')
+        .insert({
+          session_id,
+          prompt: decision.followup_question,
+          position: followupPosition,
+          is_followup: true,
+          parent_question_id: parentId
+        })
+        .select()
+        .single()
+
+      if (insertError) throw insertError
+
+      // Update turn count
+      await supabase
+        .from('sessions')
+        .update({ total_turns: total_turns + 1 })
+        .eq('id', session_id)
+
+      return res.json({
+        action: 'followup',
+        question: {
+          id: newQuestion.id,
+          prompt: newQuestion.prompt,
+          position: newQuestion.position,
+          is_followup: true
+        },
+        reason: decision.reason
+      })
+    }
+
+    // Moving to next main question
+    const nextPosition = current_position + 1
+    const nextQuestion = allQuestions?.find(q => q.position === nextPosition)
+    const isComplete = !nextQuestion
+
+    // Update session position
+    await supabase
+      .from('sessions')
+      .update({
+        current_position: nextPosition,
+        total_turns: total_turns + 1
+      })
+      .eq('id', session_id)
+
+    if (isComplete) {
+      return res.json({
+        action: 'complete',
+        message: 'All questions answered'
+      })
+    }
+
+    return res.json({
+      action: 'next',
+      question: {
+        id: nextQuestion.id,
+        prompt: nextQuestion.prompt,
+        position: nextQuestion.position,
+        is_followup: false
+      },
+      reason: decision.reason
+    })
+
+  } catch (err) {
+    console.error('Next question error:', err)
     return res.status(500).json({ error: err.message })
   }
 })
