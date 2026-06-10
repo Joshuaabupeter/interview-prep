@@ -12,10 +12,11 @@ const upload = multer({
 })
 
 // POST /api/transcribe
-// Receives audio blob from browser, sends to Groq Whisper, saves transcript
+// Receives audio blob from browser, sends to Groq Whisper, saves transcript + duration
 router.post('/', upload.single('audio'), async (req, res) => {
   try {
-    const { session_id, question_id } = req.body
+    // 1. Destructure duration_seconds alongside session and question IDs
+    const { session_id, question_id, duration_seconds } = req.body
 
     if (!req.file) {
       return res.status(400).json({ error: 'No audio file received' })
@@ -58,13 +59,14 @@ router.post('/', upload.single('audio'), async (req, res) => {
       return res.status(400).json({ error: 'No speech detected in recording' })
     }
 
-    // Save transcript to answers table
+    // 2. Save transcript AND duration_seconds to answers table safely
     const { error: upsertError } = await supabase
       .from('answers')
       .upsert({
         session_id,
         question_id,
-        transcript: transcript.trim()
+        transcript: transcript.trim(),
+        duration_seconds: duration_seconds ? parseFloat(duration_seconds) : null
       }, {
         onConflict: 'session_id, question_id'
       })
@@ -81,18 +83,5 @@ router.post('/', upload.single('audio'), async (req, res) => {
     return res.status(500).json({ error: err.message })
   }
 })
-
-const { session_id, question_id, duration_seconds } = req.body
-
-await supabase
-  .from('answers')
-  .upsert({
-    session_id,
-    question_id,
-    transcript: transcript.trim(),
-    duration_seconds: duration_seconds ? parseFloat(duration_seconds) : null
-  }, {
-    onConflict: 'session_id, question_id'
-  })
 
 module.exports = router
