@@ -167,7 +167,19 @@ router.post('/', async (req, res) => {
   res.status(202).json({ message: 'Scoring started' })
 
   try {
-    await supabase
+ // Guard — prevent double scoring if endpoint called twice
+const { data: existingReport } = await supabase
+  .from('reports')
+  .select('id')
+  .eq('session_id', session_id)
+  .single()
+
+if (existingReport) {
+  console.log(`Report already exists for session ${session_id} — skipping`)
+  return
+   }
+  
+  await supabase
       .from('sessions')
       .update({ status: 'scoring' })
       .eq('id', session_id)
