@@ -82,4 +82,17 @@ router.post('/', upload.single('audio'), async (req, res) => {
   }
 })
 
+const { session_id, question_id, duration_seconds } = req.body
+
+await supabase
+  .from('answers')
+  .upsert({
+    session_id,
+    question_id,
+    transcript: transcript.trim(),
+    duration_seconds: duration_seconds ? parseFloat(duration_seconds) : null
+  }, {
+    onConflict: 'session_id, question_id'
+  })
+
 module.exports = router
