@@ -2,6 +2,14 @@ const express = require('express')
 const router = express.Router()
 const supabase = require('../lib/supabase')
 
+// Helper function to prevent prompt injection and clean raw inputs
+const sanitizeText = (text) => {
+  return text
+    .replace(/<[^>]*>/g, '')         // strip HTML tags
+    .replace(/[^\x20-\x7E\n\r]/g, '') // strip non-printable/malicious characters
+    .substring(0, 50000)             // hard length cap
+}
+
 // POST /api/session/create
 // Called by Lovable upload screen on final submit
 router.post('/create', async (req, res) => {
@@ -60,6 +68,11 @@ router.post('/create', async (req, res) => {
       if (deductError) throw deductError
     }
 
+
+    // 2. Sanitize Inputs Before Database Writes (Prompt Injection Guard)
+    const cleanJD = sanitizeText(jd_text)
+    const cleanCV = sanitizeText(cv_extracted_text)
+
     // ─── Create session row ──────────────────────────────
     const { data: session, error: sessionError } = await supabase
       .from('sessions')
@@ -78,8 +91,8 @@ router.post('/create', async (req, res) => {
       .insert({
         session_id: session.id,
         cv_url: cv_url || null,
-        jd_text,
-        cv_extracted_text
+        jd_text: cleanJD,               // <-- Swapped with sanitized text
+        cv_extracted_text: cleanCV
       })
 
     if (docError) throw docError
