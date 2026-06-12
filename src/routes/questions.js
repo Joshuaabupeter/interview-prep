@@ -5,6 +5,26 @@ const supabase = require('../lib/supabase')
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
 
+// ─── FIX 1: GEMINI RETRY WITH BACKOFF HELPER ──────────────────────
+const generateWithRetry = async (model, prompt, maxRetries = 3) => {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const result = await model.generateContent(prompt)
+      const text = result.response.text().trim()
+      const cleaned = text
+        .replace(/```json/gi, '')
+        .replace(/```/g, '')
+        .trim()
+      return JSON.parse(cleaned)
+    } catch (err) {
+      console.error(`Gemini attempt ${attempt} failed:`, err)
+      if (attempt === maxRetries) throw err
+      // Wait before retry: 1s, 2s, 4s
+      await new Promise(r => setTimeout(r, 1000 * attempt))
+    }
+  }
+}
+
 // POST /api/questions/generate
 // Called after session is created — triggers question generation
 router.post('/generate', async (req, res) => {
@@ -78,19 +98,20 @@ Exactly this structure:
   ]
 }`
 
-    const result = await model.generateContent(prompt)
-    const text = result.response.text().trim()
-    const cleaned = text
-      .replace(/```json/gi, '')
-      .replace(/```/g, '')
-      .trim()
+    //const result = await model.generateContent(prompt)
+    //const text = result.response.text().trim()
+    //const cleaned = text
+    //  .replace(/```json/gi, '')
+     // .replace(/```/g, '')
+     // .trim()
+    //const parsed = JSON.parse(cleaned)
 
-    const parsed = JSON.parse(cleaned)
+    const parsed = await generateWithRetry(model, prompt)
 
     if (!parsed.questions || !Array.isArray(parsed.questions)) {
       throw new Error('Gemini returned invalid question format')
     }
-
+// Write all questions to Supabase in one batch
     const questionRows = parsed.questions.map(q => ({
       session_id,
       prompt: q.question,
@@ -103,7 +124,7 @@ Exactly this structure:
       .insert(questionRows)
 
     if (insertError) throw insertError
-
+// Update session status to interview_ready
     await supabase
       .from('sessions')
       .update({ status: 'interview_ready', current_position: 1, total_turns: 0 })
@@ -113,10 +134,45 @@ Exactly this structure:
 
   } catch (err) {
     console.error('Question generation error:', err)
+    // Mark session as failed so frontend stops polling
     await supabase
       .from('sessions')
       .update({ status: 'failed' })
       .eq('id', session_id)
+
+    // ─── FIX 2: AUTOMATIC CREDIT REFUND ON FAILURE ──────────────────
+    try {
+      // Find if this specific session has a tied payment reference
+      const { data: sessionData } = await supabase
+        .from('sessions')
+        .select('payment_ref')
+        .eq('id', session_id)
+        .single()
+
+      if (sessionData?.payment_ref) {
+        console.log(`Refunding credits to payment reference: ${sessionData.payment_ref}`)
+        
+        // Fetch current credits to safely increment them programmatically
+        const { data: currentPayment } = await supabase
+          .from('payments')
+          .select('credits_remaining')
+          .eq('reference', sessionData.payment_ref)
+          .single()
+
+        if (currentPayment) {
+          await supabase
+            .from('payments')
+            .update({
+              credits_remaining: currentPayment.credits_remaining + 1
+            })
+            .eq('reference', sessionData.payment_ref)
+            
+          console.log('Credit successfully returned to user account due to generation timeout.')
+        }
+      }
+    } catch (refundError) {
+      console.error('Failed to automatically execute credit refund routine:', refundError)
+    }
   }
 })
 
