@@ -411,7 +411,7 @@ Exactly this structure:
           </a>
              </div>
           </div>
-
+         '
       })
 
       await supabase
