@@ -2,6 +2,7 @@ const express = require('express')
 const router = express.Router()
 const fetch = require('node-fetch')
 const supabase = require('../lib/supabase')
+const crypto = require('crypto')
 
 // POST /api/payment/verify
 // Called after Paystack payment completes
@@ -12,6 +13,15 @@ router.post('/verify', async (req, res) => {
 
     if (!reference) {
       return res.status(400).json({ error: 'Payment reference is required' })
+    }
+
+    // ─── STEP 1: ARREST JUNK FORMATS EARLY ────────────────────────
+    // Validates standard alphanumeric Paystack characters before hitting APIs
+    const isValidRef = /^[a-zA-Z0-9_\-]+$/.test(reference)
+    if (!isValidRef || reference.length < 5) {
+      return res.status(400).json({ 
+        error: 'Invalid payment reference format.' 
+      })
     }
 
     // Verify with Paystack server-side
@@ -225,6 +235,71 @@ router.get('/recover', async (req, res) => {
 
   } catch (err) {
     console.error('Payment recovery error:', err)
+    return res.status(500).json({ error: err.message })
+  }
+})
+
+
+// POST /api/payment/webhook
+// Securely captures backend transaction events directly out of Paystack servers
+router.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  try {
+    // 1. Validate request signature using the uncorrupted raw request body Buffer
+    const hash = crypto
+      .createHmac('sha512', process.env.PAYSTACK_WEBHOOK_SECRET)
+      .update(req.body) // Passed directly as raw Buffer
+      .digest('hex')
+
+    if (hash !== req.headers['x-paystack-signature']) {
+      console.error('Unauthorized Webhook Sign-Check Attempt: Signature mismatch.')
+      return res.status(401).json({ error: 'Invalid signature' })
+    }
+
+    // 2. Safely parse the verified Buffer into JSON data
+    const event = JSON.parse(req.body.toString())
+    
+    // Only process charge.success events
+    if (event.event === 'charge.success') {
+      const transaction = event.data
+      const reference = transaction.reference
+      const customerEmail = transaction.customer.email
+      
+      // Extract plan selection from custom fields array metadata if available
+      const plan = transaction.metadata?.custom_fields?.find(f => f.variable_name === 'plan')?.value || 'session'
+      const credits = plan === 'monthly' ? 50 : 1
+      const expirationDate = plan === 'monthly' 
+        ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+        : null
+
+      console.log(`Verified webhook payment incoming: ${reference}. Granting ${credits} credits.`)
+
+      // Check if payment already exists via reference to avoid duplication
+      const { data: existingPayment } = await supabase
+        .from('payments')
+        .select('id')
+        .eq('reference', reference)
+        .maybeSingle()
+
+      if (!existingPayment) {
+        await supabase
+          .from('payments')
+          .insert({
+            reference: reference,
+            email: customerEmail.toLowerCase().trim(),
+            amount: transaction.amount,
+            plan: plan,
+            credits_remaining: credits,
+            status: 'success',
+            expires_at: expirationDate
+          })
+      }
+    }
+
+    // Always tell Paystack your server received the event successfully
+    return res.status(200).json({ status: 'success' })
+
+  } catch (err) {
+    console.error('Webhook compilation processing error:', err)
     return res.status(500).json({ error: err.message })
   }
 })
