@@ -56,7 +56,13 @@ router.post('/verify', async (req, res) => {
     // Determine session credits based on plan
     const credits = plan === 'monthly' ? 50 : 1
 
-    // Store verified payment in Supabase
+    // ─── PINPOINT FOR INSERTION ─────────────────────────────────
+    // Calculate the expiration date right here:
+    const expirationDate = plan === 'monthly' 
+      ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+      : null
+
+   // Store verified payment in Supabase
     const { data: payment, error: paymentError } = await supabase
       .from('payments')
       .insert({
@@ -65,7 +71,8 @@ router.post('/verify', async (req, res) => {
         amount: transaction.amount,
         plan: plan || 'session',
         credits_remaining: credits,
-        status: 'success'
+        status: 'success',
+        expires_at: expirationDate // <-- ADD THIS LINE HERE
       })
       .select()
       .single()
@@ -111,13 +118,22 @@ router.post('/consume-credit', async (req, res) => {
     // Fetch payment record
     const { data: payment, error: fetchError } = await supabase
       .from('payments')
-      .select('credits_remaining, status')
+      .select('credits_remaining, status, expires_at')
       .eq('reference', reference)
       .single()
 
     if (fetchError || !payment) {
       return res.status(404).json({ error: 'Payment not found' })
     }
+
+    // ─── PINPOINT FOR INSERTION: EXPIRATION CHECK ─────────────────
+    if (payment.expires_at && new Date(payment.expires_at) < new Date()) {
+      return res.status(403).json({ 
+        error: 'Your monthly plan has expired.',
+        redirect: '/pricing'
+      })
+    }
+    // ─────────────────────────────────────────────────────────────
 
     if (payment.credits_remaining <= 0) {
       return res.status(403).json({ 
