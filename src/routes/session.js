@@ -41,13 +41,21 @@ router.post('/create', async (req, res) => {
     if (payment_ref) {
       const { data: payment, error: paymentError } = await supabase
         .from('payments')
-        .select('credits_remaining')
+       .select('credits_remaining, expires_at')
         .eq('reference', payment_ref)
         .single()
 
       if (paymentError || !payment) {
         return res.status(403).json({
           error: 'Invalid payment reference.',
+          redirect: '/pricing'
+        })
+      }
+
+      // 2. Added the plan expiry validation check right here
+      if (payment.expires_at && new Date(payment.expires_at) < new Date()) {
+        return res.status(403).json({
+          error: 'Your monthly plan has expired.',
           redirect: '/pricing'
         })
       }
