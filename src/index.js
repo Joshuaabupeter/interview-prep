@@ -1,3 +1,17 @@
+// ─── SENTRY INITIALIZATION (MUST BE FIRST) ───────────────────
+const Sentry = require('@sentry/node')
+
+if (process.env.SENTRY_DSN) {
+  Sentry.init({
+    dsn: process.env.SENTRY_DSN,
+    tracesSampleRate: 0.1
+  })
+  console.log('Sentry error tracking initialized.')
+} else {
+  console.log('Sentry warning: SENTRY_DSN environment variable not found.')
+}
+// ─────────────────────────────────────────────────────────────
+
 require('dotenv').config()
 
 const express = require('express')
@@ -154,6 +168,7 @@ cron.schedule('0 * * * *', async () => {
 
   } catch (err) {
     console.error('Data privacy cleanup error:', err)
+    Sentry.captureException(err) // Send background cron errors to Sentry
   }
 
   const ninetyDays = new Date(
@@ -173,6 +188,10 @@ app.use((req, res) => {
 // ─── Global Error Handler ─────────────────────────────────
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err)
+  
+// Send web routing application errors straight to Sentry dashboard
+  Sentry.captureException(err)
+  
   res.status(500).json({ error: 'Internal server error' })
 })
 
