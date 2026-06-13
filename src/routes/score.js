@@ -345,6 +345,19 @@ Exactly this structure:
 
     // Send email
     if (email) {
+
+       // Fetch the auto-generated access_token
+    const { data: reportData, error: tokenError } = await supabase
+      .from('reports')
+      .select('access_token')
+      .eq('session_id', session_id)
+      .single()
+
+    if (tokenError) throw tokenError
+    
+    // Create the secure URL string
+    const reportUrl = `${process.env.FRONTEND_URL}/results?token=${reportData.access_token}`
+      
       const topFillerText = speechSummary?.top_filler_words?.length
         ? speechSummary.top_filler_words.map(f => `"${f.word}" (${f.count}x)`).join(', ')
         : 'None detected'
@@ -392,13 +405,13 @@ Exactly this structure:
             </table>
             ` : ''}
             <div style="margin-top: 40px;">
-              <a href="${process.env.FRONTEND_URL}/results?session=${session_id}"
-                 style="background: #c8a96e; color: #0a0a0f; padding: 14px 32px; text-decoration: none; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase;">
-                View Full Report
-              </a>
-            </div>
+              <a href="${reportUrl}"
+          style="background: #c8a96e; color: #0a0a0f; padding: 14px 32px; text-decoration: none; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase;">
+          View Full Report
+          </a>
+             </div>
           </div>
-        `
+
       })
 
       await supabase
@@ -423,15 +436,21 @@ Exactly this structure:
   }
 })
 
-// GET /api/score/:session_id
-router.get('/:session_id', async (req, res) => {
+// GET /api/score/:token
+// Called by Lovable /results page to fetch the report securely using the shareable token
+router.get('/:token', async (req, res) => {
   try {
-    const { session_id } = req.params
+    const { token } = req.params
 
+    if (!token) {
+      return res.status(400).json({ error: 'Access token parameter is required' })
+    }
+
+    // Secure lookup by matching against access_token column values instead of raw IDs
     const { data, error } = await supabase
       .from('reports')
       .select('*')
-      .eq('session_id', session_id)
+      .eq('access_token', token)
       .single()
 
     if (error) throw error
@@ -441,6 +460,7 @@ router.get('/:session_id', async (req, res) => {
       data.scores = JSON.parse(data.scores)
     }
 
+    // Keep the payload layout identical ({ report: data }) so your frontend charts don't break
     return res.json({ report: data })
 
   } catch (err) {
