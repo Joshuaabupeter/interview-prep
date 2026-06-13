@@ -19,10 +19,6 @@ const cors = require('cors')
 const rateLimit = require('express-rate-limit')
 const cron = require('node-cron')
 
-// 1. Register the Payment Router FIRST (Before any global body-parsers)
-const paymentRoutes = require('./routes/payment')
-app.use('/api/payment', paymentRoutes)
-
 const app = express()
 const PORT = process.env.PORT || 3000
 
@@ -47,6 +43,10 @@ const corsOptions = {
 
 app.use(cors(corsOptions))
 app.options('*', cors(corsOptions))
+
+// 1. Register the Payment Router FIRST (Before any global body-parsers)
+const paymentRoutes = require('./routes/payment')
+app.use('/api/payment', paymentRoutes)
 
 // ─── Rate Limiting ────────────────────────────────────────
 
