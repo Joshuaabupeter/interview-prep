@@ -25,6 +25,7 @@ const transcribeRoutes = require('./routes/transcribe')
 const scoreRoutes = require('./routes/score')
 const speakRoutes = require('./routes/speak')
 const paymentRoutes = require('./routes/payment')
+const adminRoutes = require('./routes/admin')
 
 const app = express()
 const PORT = process.env.PORT || 3000
@@ -102,6 +103,7 @@ app.use('/api/transcribe', transcribeRoutes)
 app.use('/api/score', aiLimiter, scoreRoutes)
 app.use('/api/speak', speakRoutes)
 app.use('/api/payment', paymentRoutes)
+app.use('/api/admin', adminRoutes)
 
 // ─── CV Cleanup Cron — runs every hour ────────────────────
 // ─── Data Privacy Cleanup Cron — runs every hour ────────────────────
