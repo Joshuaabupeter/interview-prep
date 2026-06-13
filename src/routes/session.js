@@ -109,7 +109,7 @@ router.post('/create', async (req, res) => {
 })
 
 // GET /api/session/:id/status
-// Polled by /waiting and /processing screens
+// Polled by Lovable /waiting and /processing screens
 router.get('/:id/status', async (req, res) => {
   try {
     const { id } = req.params
@@ -123,10 +123,28 @@ router.get('/:id/status', async (req, res) => {
     if (error) throw error
     if (!data) return res.status(404).json({ error: 'Session not found' })
 
-    return res.json({ status: data.status })
+    let token = null
+
+    // If the interview scoring is complete, grab the auto-generated access token
+    if (data.status === 'complete') {
+      const { data: report } = await supabase
+        .from('reports')
+        .select('access_token')
+        .eq('session_id', id)
+        .single()
+        
+      token = report?.access_token || null
+    }
+
+    return res.json({ 
+      id: data.id, 
+      status: data.status,
+      token // Sent to frontend to allow secure redirection
+    })
 
   } catch (err) {
     console.error('Session status error:', err)
+    if (typeof Sentry !== 'undefined') Sentry.captureException(err)
     return res.status(500).json({ error: err.message })
   }
 })
