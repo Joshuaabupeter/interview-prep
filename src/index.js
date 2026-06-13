@@ -19,13 +19,9 @@ const cors = require('cors')
 const rateLimit = require('express-rate-limit')
 const cron = require('node-cron')
 
-const sessionRoutes = require('./routes/session')
-const questionRoutes = require('./routes/questions')
-const transcribeRoutes = require('./routes/transcribe')
-const scoreRoutes = require('./routes/score')
-const speakRoutes = require('./routes/speak')
+// 1. Register the Payment Router FIRST (Before any global body-parsers)
 const paymentRoutes = require('./routes/payment')
-const adminRoutes = require('./routes/admin')
+app.use('/api/payment', paymentRoutes)
 
 const app = express()
 const PORT = process.env.PORT || 3000
@@ -97,12 +93,19 @@ app.get('/health', (req, res) => {
 })
 
 // ─── Routes ───────────────────────────────────────────────
+const sessionRoutes = require('./routes/session')
+const questionRoutes = require('./routes/questions')
+const transcribeRoutes = require('./routes/transcribe')
+const scoreRoutes = require('./routes/score')
+const speakRoutes = require('./routes/speak')
+const adminRoutes = require('./routes/admin')
+
+// ─── Routes ───────────────────────────────────────────────
 app.use('/api/session', sessionLimiter, sessionRoutes)
 app.use('/api/questions', aiLimiter, questionRoutes)
 app.use('/api/transcribe', transcribeRoutes)
 app.use('/api/score', aiLimiter, scoreRoutes)
 app.use('/api/speak', speakRoutes)
-app.use('/api/payment', paymentRoutes)
 app.use('/api/admin', adminRoutes)
 
 // ─── CV Cleanup Cron — runs every hour ────────────────────
