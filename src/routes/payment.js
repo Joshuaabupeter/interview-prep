@@ -3,6 +3,9 @@ const router = express.Router()
 const fetch = require('node-fetch')
 const supabase = require('../lib/supabase')
 const crypto = require('crypto')
+const { Resend } = require('resend') // <-- ADD THIS LINE
+
+const resend = new Resend(process.env.RESEND_API_KEY) // <-- ADD THIS LINE
 
 // POST /api/payment/verify
 // Called after Paystack payment completes
@@ -124,7 +127,6 @@ router.post('/consume-credit', async (req, res) => {
     if (!reference) {
       return res.status(400).json({ error: 'Payment reference is required' })
     }
-
     // Fetch payment record
     const { data: payment, error: fetchError } = await supabase
       .from('payments')
