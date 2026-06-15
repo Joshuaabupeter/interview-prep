@@ -103,6 +103,34 @@ router.post('/verify', async (req, res) => {
       throw paymentError
     }
 
+    // ─── SEND CONFIRMATION EMAIL IMMEDIATELY ON SUCCESS ───
+    try {
+      await resend.emails.send({
+        from: process.env.FROM_EMAIL,
+        to: transaction.customer.email.toLowerCase().trim(),
+        subject: 'Payment confirmed — RoleMatch',
+        html: `
+          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; background: #0a0a0f; color: #e8e8e0;">
+            <p style="color: #c8a96e; font-weight: bold; text-transform: uppercase; font-size: 12px; letter-spacing: 0.05em;">Transaction Receipt</p>
+            <h2 style="color: #fff;">Payment Confirmed!</h2>
+            <p>Your payment of ₦${transaction.amount / 100} was successful. Your session credits are now live and ready.</p>
+            <div style="margin: 32px 0;">
+              <a href="${process.env.FRONTEND_URL}/upload"
+                 style="background: #c8a96e; color: #0a0a0f; padding: 12px 24px; text-decoration: none; font-weight: bold; border-radius: 4px; display: inline-block;">
+                Start Your Interview →
+              </a>
+            </div>
+            <p style="color: rgba(255,255,255,0.4); font-size: 13px; line-height: 1.6;">
+              If you close this window or lose this link, simply use the <strong>"Already paid?"</strong> recovery option on our pricing page to get back into your account instantly.
+            </p>
+          </div>
+        `
+      })
+      console.log(`Receipt email sent via /verify to ${transaction.customer.email}`)
+    } catch (emailErr) {
+      console.error('Failed to dispatch receipt via /verify endpoint:', emailErr)
+    }
+
     return res.json({
       verified: true,
       reference: transaction.reference,
@@ -294,6 +322,34 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
             status: 'success',
             expires_at: expirationDate
           })
+
+        // ─── SEND CONFIRMATION EMAIL VIA WEBHOOK SAFETY LINE ───
+        try {
+          await resend.emails.send({
+            from: process.env.FROM_EMAIL,
+            to: customerEmail.toLowerCase().trim(),
+            subject: 'Payment confirmed — RoleMatch',
+            html: `
+              <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; background: #0a0a0f; color: #e8e8e0;">
+                <p style="color: #c8a96e; font-weight: bold; text-transform: uppercase; font-size: 12px; letter-spacing: 0.05em;">Transaction Receipt</p>
+                <h2 style="color: #fff;">Payment Confirmed!</h2>
+                <p>Your payment of ₦${transaction.amount / 100} was successful. Your session credits are now live and ready.</p>
+                <div style="margin: 32px 0;">
+                  <a href="${process.env.FRONTEND_URL}/upload"
+                     style="background: #c8a96e; color: #0a0a0f; padding: 12px 24px; text-decoration: none; font-weight: bold; border-radius: 4px; display: inline-block;">
+                    Start Your Interview →
+                  </a>
+                </div>
+                <p style="color: rgba(255,255,255,0.4); font-size: 13px; line-height: 1.6;">
+                  If you close this window or lose this link, simply use the <strong>"Already paid?"</strong> recovery option on our pricing page to get back into your account instantly.
+                </p>
+              </div>
+            `
+          })
+          console.log(`Receipt email sent via webhook to ${customerEmail}`)
+        } catch (emailErr) {
+          console.error('Failed to dispatch receipt via webhook line:', emailErr)
+        }
       }
     }
 
