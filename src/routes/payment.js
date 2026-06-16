@@ -261,17 +261,23 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
       return res.status(500).json({ error: 'Webhook secret not configured' })
     }
 
-    const hash = crypto
-      .createHmac('sha512', process.env.PAYSTACK_WEBHOOK_SECRET)
-      .update(req.body)
-      .digest('hex')
+  const rawBody = Buffer.isBuffer(req.body) 
+  ? req.body 
+  : Buffer.from(JSON.stringify(req.body))
+
+   const hash = crypto
+  .createHmac('sha512', process.env.PAYSTACK_WEBHOOK_SECRET)
+  .update(rawBody)
+  .digest('hex')
 
     if (hash !== req.headers['x-paystack-signature']) {
       console.error('Webhook signature mismatch — unauthorized attempt')
       return res.status(401).json({ error: 'Invalid signature' })
     }
 
-    const event = JSON.parse(req.body.toString())
+    const event = Buffer.isBuffer(req.body) 
+  ? JSON.parse(req.body.toString()) 
+  : req.body
 
     if (event.event === 'charge.success') {
       const transaction = event.data
