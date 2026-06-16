@@ -45,8 +45,7 @@ app.use(cors(corsOptions))
 app.options('*', cors(corsOptions))
 
 // 1. Register the Payment Router FIRST (Before any global body-parsers)
-const paymentRoutes = require('./routes/payment')
-app.use('/api/payment', paymentRoutes)
+
 
 // ─── Rate Limiting ────────────────────────────────────────
 
@@ -98,6 +97,7 @@ const questionRoutes = require('./routes/questions')
 const transcribeRoutes = require('./routes/transcribe')
 const scoreRoutes = require('./routes/score')
 const speakRoutes = require('./routes/speak')
+const paymentRoutes = require('./routes/payment')
 const adminRoutes = require('./routes/admin')
 
 // ─── Routes ───────────────────────────────────────────────
@@ -106,6 +106,7 @@ app.use('/api/questions', aiLimiter, questionRoutes)
 app.use('/api/transcribe', transcribeRoutes)
 app.use('/api/score', aiLimiter, scoreRoutes)
 app.use('/api/speak', speakRoutes)
+app.use('/api/payment', paymentRoutes)
 app.use('/api/admin', adminRoutes)
 
 // ─── CV Cleanup Cron — runs every hour ────────────────────
