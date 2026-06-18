@@ -73,10 +73,6 @@ router.post('/', upload.single('audio'), async (req, res) => {
     onConflict: 'session_id, question_id'
   })
 
-Do Both
-Fix 1 handles existing data and future decimals at the database level. Fix 2 ensures the value is always sent as a proper number not a string.
-Run the SQL first, push the transcribe.js change to GitHub, redeploy, and the error disappears.Claude Fa
-
     if (upsertError) throw upsertError
 
     return res.json({
