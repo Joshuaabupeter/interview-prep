@@ -15,12 +15,13 @@ if (process.env.SENTRY_DSN) {
 require('dotenv').config()
 
 const express = require('express')
-app.set('trust proxy', 1)
+
 const cors = require('cors')
 const rateLimit = require('express-rate-limit')
 const cron = require('node-cron')
 
 const app = express()
+app.set('trust proxy', 1)
 const PORT = process.env.PORT || 3000
 
 // ─── CORS — must be before all routes ─────────────────────
