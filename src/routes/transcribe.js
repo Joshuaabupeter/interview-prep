@@ -61,15 +61,21 @@ router.post('/', upload.single('audio'), async (req, res) => {
 
     // 2. Save transcript AND duration_seconds to answers table safely
     const { error: upsertError } = await supabase
-      .from('answers')
-      .upsert({
-        session_id,
-        question_id,
-        transcript: transcript.trim(),
-        duration_seconds: duration_seconds ? parseFloat(duration_seconds) : null
-      }, {
-        onConflict: 'session_id, question_id'
-      })
+  .from('answers')
+  .upsert({
+    session_id,
+    question_id,
+    transcript: transcript.trim(),
+    duration_seconds: duration_seconds 
+      ? parseFloat(duration_seconds)  // ← parseFloat not parseInt
+      : null
+  }, {
+    onConflict: 'session_id, question_id'
+  })
+
+Do Both
+Fix 1 handles existing data and future decimals at the database level. Fix 2 ensures the value is always sent as a proper number not a string.
+Run the SQL first, push the transcribe.js change to GitHub, redeploy, and the error disappears.Claude Fa
 
     if (upsertError) throw upsertError
 
