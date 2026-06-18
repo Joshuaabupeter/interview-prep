@@ -66,8 +66,8 @@ router.post('/', upload.single('audio'), async (req, res) => {
     session_id,
     question_id,
     transcript: transcript.trim(),
-    duration_seconds: duration_seconds 
-      ? parseFloat(duration_seconds)  // ← parseFloat not parseInt
+    duration_seconds: duration_seconds
+      ? Math.round(parseFloat(duration_seconds))
       : null
   }, {
     onConflict: 'session_id, question_id'
