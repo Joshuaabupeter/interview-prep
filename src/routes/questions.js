@@ -5,7 +5,7 @@ const supabase = require('../lib/supabase')
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
 
-// ─── FIX 1: GEMINI RETRY WITH BACKOFF HELPER ──────────────────────
+// ─── Gemini retry with backoff ─────────────────────────────
 const generateWithRetry = async (model, prompt, maxRetries = 3) => {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
@@ -19,14 +19,12 @@ const generateWithRetry = async (model, prompt, maxRetries = 3) => {
     } catch (err) {
       console.error(`Gemini attempt ${attempt} failed:`, err)
       if (attempt === maxRetries) throw err
-      // Wait before retry: 1s, 2s, 4s
       await new Promise(r => setTimeout(r, 1000 * attempt))
     }
   }
 }
 
 // POST /api/questions/generate
-// Called after session is created — triggers question generation
 router.post('/generate', async (req, res) => {
   const { session_id } = req.body
 
@@ -98,20 +96,12 @@ Exactly this structure:
   ]
 }`
 
-    //const result = await model.generateContent(prompt)
-    //const text = result.response.text().trim()
-    //const cleaned = text
-    //  .replace(/```json/gi, '')
-     // .replace(/```/g, '')
-     // .trim()
-    //const parsed = JSON.parse(cleaned)
-
     const parsed = await generateWithRetry(model, prompt)
 
     if (!parsed.questions || !Array.isArray(parsed.questions)) {
       throw new Error('Gemini returned invalid question format')
     }
-// Write all questions to Supabase in one batch
+
     const questionRows = parsed.questions.map(q => ({
       session_id,
       prompt: q.question,
@@ -124,7 +114,7 @@ Exactly this structure:
       .insert(questionRows)
 
     if (insertError) throw insertError
-// Update session status to interview_ready
+
     await supabase
       .from('sessions')
       .update({ status: 'interview_ready', current_position: 1, total_turns: 0 })
@@ -134,15 +124,14 @@ Exactly this structure:
 
   } catch (err) {
     console.error('Question generation error:', err)
-    // Mark session as failed so frontend stops polling
+
     await supabase
       .from('sessions')
       .update({ status: 'failed' })
       .eq('id', session_id)
 
-    // ─── FIX 2: AUTOMATIC CREDIT REFUND ON FAILURE ──────────────────
+    // Auto credit refund on failure
     try {
-      // Find if this specific session has a tied payment reference
       const { data: sessionData } = await supabase
         .from('sessions')
         .select('payment_ref')
@@ -150,9 +139,6 @@ Exactly this structure:
         .single()
 
       if (sessionData?.payment_ref) {
-        console.log(`Refunding credits to payment reference: ${sessionData.payment_ref}`)
-        
-        // Fetch current credits to safely increment them programmatically
         const { data: currentPayment } = await supabase
           .from('payments')
           .select('credits_remaining')
@@ -166,18 +152,17 @@ Exactly this structure:
               credits_remaining: currentPayment.credits_remaining + 1
             })
             .eq('reference', sessionData.payment_ref)
-            
-          console.log('Credit successfully returned to user account due to generation timeout.')
+
+          console.log('Credit refunded due to generation failure.')
         }
       }
     } catch (refundError) {
-      console.error('Failed to automatically execute credit refund routine:', refundError)
+      console.error('Credit refund failed:', refundError)
     }
   }
 })
 
 // GET /api/questions/:session_id
-// Called by interview room to load questions
 router.get('/:session_id', async (req, res) => {
   try {
     const { session_id } = req.params
@@ -199,7 +184,6 @@ router.get('/:session_id', async (req, res) => {
 })
 
 // POST /api/questions/next
-// Called after each answer — AI decides follow-up or move on
 router.post('/next', async (req, res) => {
   try {
     const { session_id, question_id, transcript } = req.body
@@ -219,7 +203,8 @@ router.post('/next', async (req, res) => {
 
     if (sessionError || !session) throw new Error('Session not found')
 
-    const { current_position, total_turns } = session
+    const current_position = parseInt(session.current_position) || 1
+    const total_turns = parseInt(session.total_turns) || 0
 
     // Fetch the current question
     const { data: currentQuestion, error: qError } = await supabase
@@ -230,7 +215,7 @@ router.post('/next', async (req, res) => {
 
     if (qError || !currentQuestion) throw new Error('Question not found')
 
-    // Fetch all main questions for this session
+    // Fetch all main questions
     const { data: allQuestions } = await supabase
       .from('questions')
       .select('id, prompt, position, is_followup')
@@ -239,22 +224,16 @@ router.post('/next', async (req, res) => {
       .order('position', { ascending: true })
 
     const totalMainQuestions = allQuestions?.length || 5
-    const maxTurns = totalMainQuestions * 2 // 1 follow-up max per question
+    const maxTurns = totalMainQuestions * 2
 
-    // Hard limits — always move on if:
-    // 1. Already did a follow-up on this question
-    // 2. Hit max turns
-    // 3. On the last main question with no follow-up yet
     const alreadyHadFollowup = currentQuestion.is_followup
     const hitMaxTurns = total_turns >= maxTurns
 
-    let decision = { action: 'followup', followup_question: null }
+    let decision = { action: 'next', followup_question: null }
 
-    if (alreadyHadFollowup || hitMaxTurns) {
-      decision.action = 'next'
-    } else {
-      // Ask Gemini to decide — follow-up or move on
-      const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite'})
+    if (!alreadyHadFollowup && !hitMaxTurns) {
+      // Ask Gemini to decide
+      const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite' })
 
       const decisionPrompt = `You are conducting a job interview.
 
@@ -269,7 +248,7 @@ Decide: does this answer warrant a follow-up question, or was it sufficient to m
 Rules:
 - Follow up ONLY if the answer was vague, incomplete, or dodged the core of the question
 - Do NOT follow up if the answer was clear, specific, and addressed the question well
-- Follow-up questions must dig deeper into the SAME topic — not introduce a new area
+- Follow-up questions must dig deeper into the SAME topic, not introduce a new area
 - Write follow-up questions as clean spoken sentences, no apostrophes, no special characters
 - Maximum one follow-up per main question
 
@@ -287,29 +266,37 @@ OR if moving on:
   "followup_question": null
 }`
 
-      const result = await model.generateContent(decisionPrompt)
-      const text = result.response.text().trim()
-      const cleaned = text.replace(/```json/gi, '').replace(/```/g, '').trim()
-      const geminiDecision = JSON.parse(cleaned)
+      try {
+        const geminiDecision = await generateWithRetry(model, decisionPrompt)
 
-      if (geminiDecision.should_followup && geminiDecision.followup_question) {
-        decision.action = 'followup'
-        decision.followup_question = geminiDecision.followup_question
-        decision.reason = geminiDecision.reason
-      } else {
+        if (geminiDecision.should_followup && geminiDecision.followup_question) {
+          decision.action = 'followup'
+          decision.followup_question = geminiDecision.followup_question
+          decision.reason = geminiDecision.reason
+        } else {
+          decision.action = 'next'
+          decision.reason = geminiDecision.reason
+        }
+      } catch (geminiErr) {
+        // If Gemini fails on decision, safely move to next question
+        console.error('Gemini follow-up decision failed, moving on:', geminiErr)
         decision.action = 'next'
-        decision.reason = geminiDecision.reason
       }
     }
 
-    // If following up — insert the follow-up question into DB
+    // Insert follow-up question
     if (decision.action === 'followup' && decision.followup_question) {
       const parentId = currentQuestion.is_followup
         ? currentQuestion.parent_question_id
         : currentQuestion.id
 
-      // Position as decimal so it sorts between main questions
-      const followupPosition = currentQuestion.position + 0.5
+      // ─── KEY FIX ─────────────────────────────────────────
+      // Use a large integer position instead of decimal (e.g. 1.5)
+      // Multiply main position by 100, add 50 for follow-up
+      // So Q1=100, Q1 followup=150, Q2=200, Q2 followup=250 etc.
+      // This keeps ordering correct without any decimals
+      const mainPosition = Math.round(parseFloat(currentQuestion.position))
+      const followupPosition = (mainPosition * 100) + 50
 
       const { data: newQuestion, error: insertError } = await supabase
         .from('questions')
@@ -325,7 +312,6 @@ OR if moving on:
 
       if (insertError) throw insertError
 
-      // Update turn count
       await supabase
         .from('sessions')
         .update({ total_turns: total_turns + 1 })
@@ -343,12 +329,13 @@ OR if moving on:
       })
     }
 
-    // Moving to next main question
+    // Move to next main question
     const nextPosition = current_position + 1
-    const nextQuestion = allQuestions?.find(q => q.position === nextPosition)
+    const nextQuestion = allQuestions?.find(
+      q => parseInt(q.position) === nextPosition
+    )
     const isComplete = !nextQuestion
 
-    // Update session position
     await supabase
       .from('sessions')
       .update({
