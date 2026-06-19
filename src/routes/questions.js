@@ -69,6 +69,11 @@ Your task:
 2. Generate exactly 5 probing interview questions targeting those gaps
 
 Rules for questions:
+- Question 1 must ALWAYS be a version of "tell me about yourself" but written specifically for THIS candidate and THIS role.
+  Reference their actual background and the specific role they are applying for.
+  Example format: "I have your CV in front of me, and I see you've spent the last [Number] years focused heavily on [Skill/Industry from CV]. 
+  To kick things off, tell me a bit about yourself and specifically why you are pivoting toward this [Job Title from JD] position right now?"
+- Questions 2-5 target the specific gaps between their CV and the JD
 - Specific to THIS candidate and THIS role only
 - Direct and pressure-testing, no soft language
 - Sound exactly like a real human interviewer speaking out loud
