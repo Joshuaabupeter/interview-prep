@@ -266,11 +266,18 @@ const qaBlock = questions.map(q => {
     // Call Gemini for scoring
     const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite' })
 
-    const prompt = `You are a senior executive recruiter scoring a mock job interview.
+    const prompt = `You are a senior executive recruiter 
+scoring a mock job interview.
 
-Score each answer honestly and critically. Do not be generous.
-A score of 7 or above must be genuinely earned.
-If the candidate did not answer, score it 0.
+CRITICAL DIRECTIVE: Write ALL feedback directly to the user using second-person perspective — "you", "your", "you demonstrated". 
+Never use third-person language like "the candidate" or "the user". 
+This report is delivered personally to the interviewee.
+
+SCORING RULES:
+- Score each individual answer honestly on a scale of 0 to 10. 
+- An individual score of 7 or above must be genuinely earned through strong, specific examples.
+- If a question was skipped or not answered, score it exactly 0.
+- Provide the final overall_score on a scale of 0 to 100 based on their total performance.
 
 JOB DESCRIPTION:
 ${doc.jd_text}
@@ -278,22 +285,21 @@ ${doc.jd_text}
 INTERVIEW TRANSCRIPT:
 ${qaBlock}
 
-Return ONLY valid JSON. No explanation. No markdown. No code blocks.
-Exactly this structure:
+Return ONLY valid JSON object. No pre-text, no post-text, no explanation, and do not wrap it in markdown code blocks.
 {
   "overall_score": 74,
-  "job_title": "The job title extracted from the JD",
-  "executive_summary": "3-4 sentence overall assessment. No apostrophes.",
-  "top_strengths": "What they demonstrated well. No apostrophes.",
-  "critical_gaps": "Most important weaknesses exposed. No apostrophes.",
-  "recommended_actions": "3 specific things to work on. No apostrophes.",
+  "job_title": "extracted from JD",
+  "executive_summary": "You demonstrated... Your background shows... (second person, no apostrophes)",
+  "top_strengths": "You showed significant strength in... You showed strength in... (second person, no apostrophes)",
+  "critical_gaps": "Your main structural weakness was... Your main weakness was... (second person, no apostrophes)",
+  "recommended_actions": "You should focus on... You should focus on practicing the STAR methodology... (second person, no apostrophes)",
   "answers": [
     {
       "question_order": 1,
       "score": 7,
-      "feedback_strong": "What was good. No apostrophes.",
-      "feedback_weak": "What was missing. No apostrophes.",
-      "ideal_answer_summary": "What a great answer would have covered. No apostrophes."
+      "feedback_strong": "You handled this well by... (second person)",
+      "feedback_weak": "Your answer missed... (second person)",
+      "ideal_answer_summary": "A strong response would have included... (second person)"
     }
   ]
 }`
