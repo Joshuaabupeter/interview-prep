@@ -275,7 +275,8 @@ This report is delivered personally to the interviewee.
 
 SCORING RULES:
 - Score each individual answer honestly on a scale of 0 to 10. 
-- An individual score of 7 or above must be genuinely earned through strong, specific examples.
+- An individual score of 7 or above must be genuinely earned.
+- Do not be nice, remember the goal here is to make sure they are prepared for the real interview.
 - If a question was skipped or not answered, score it exactly 0.
 - Provide the final overall_score on a scale of 0 to 100 based on their total performance.
 
@@ -285,7 +286,8 @@ ${doc.jd_text}
 INTERVIEW TRANSCRIPT:
 ${qaBlock}
 
-Return ONLY valid JSON object. No pre-text, no post-text, no explanation, and do not wrap it in markdown code blocks.
+Return ONLY valid JSON object. No pre-text, no post-text, no explanation, and do not wrap it in markdown code blocks. 
+See sample answer below.
 {
   "overall_score": 74,
   "job_title": "extracted from JD",
