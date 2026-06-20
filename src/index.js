@@ -46,9 +46,6 @@ const corsOptions = {
 app.use(cors(corsOptions))
 app.options('*', cors(corsOptions))
 
-// 1. Register the Payment Router FIRST (Before any global body-parsers)
-
-
 // ─── Rate Limiting ────────────────────────────────────────
 
 // Global — all routes
@@ -60,13 +57,24 @@ const globalLimiter = rateLimit({
   message: { error: 'Too many requests, please try again later.' }
 })
 
-// AI routes — question generation and scoring
-const aiLimiter = rateLimit({
+// Questions — generate + next (called many times per single interview)
+// 5 main questions + up to 5 follow-ups + 1 generate call = ~11 calls
+// minimum per session. Set generously per IP per hour.
+const questionsLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
-  max: 10,
+  max: 100,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'AI request limit reached. Please try again in an hour.' }
+  message: { error: 'Interview request limit reached. Please try again in an hour.' }
+})
+
+// Scoring — called once per completed session
+const scoreLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Scoring request limit reached. Please try again in an hour.' }
 })
 
 // Session creation — stops bulk abuse
@@ -102,23 +110,21 @@ const speakRoutes = require('./routes/speak')
 const paymentRoutes = require('./routes/payment')
 const adminRoutes = require('./routes/admin')
 
-// ─── Routes ───────────────────────────────────────────────
 app.use('/api/session', sessionLimiter, sessionRoutes)
-app.use('/api/questions', aiLimiter, questionRoutes)
+app.use('/api/questions', questionsLimiter, questionRoutes)
 app.use('/api/transcribe', transcribeRoutes)
-app.use('/api/score', aiLimiter, scoreRoutes)
+app.use('/api/score', scoreLimiter, scoreRoutes)
 app.use('/api/speak', speakRoutes)
 app.use('/api/payment', paymentRoutes)
 app.use('/api/admin', adminRoutes)
 
-// ─── CV Cleanup Cron — runs every hour ────────────────────
-// ─── Data Privacy Cleanup Cron — runs every hour ────────────────────
+// ─── Data Privacy Cleanup Cron — runs every hour ──────────
 cron.schedule('0 * * * *', async () => {
-  const supabase = require('./lib/supabase') // move to top of cron
-  
+  const supabase = require('./lib/supabase')
+
   try {
     console.log('Running system data privacy cleanup job...')
-    
+
     const cutoff = new Date(
       Date.now() - 24 * 60 * 60 * 1000
     ).toISOString()
@@ -195,10 +201,9 @@ app.use((req, res) => {
 // ─── Global Error Handler ─────────────────────────────────
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err)
-  
-// Send web routing application errors straight to Sentry dashboard
-  Sentry.captureException(err)
-  
+
+  if (process.env.SENTRY_DSN) Sentry.captureException(err)
+
   res.status(500).json({ error: 'Internal server error' })
 })
 
