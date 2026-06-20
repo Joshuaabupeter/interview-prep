@@ -87,6 +87,18 @@ router.get('/stats', async (req, res) => {
     console.error('Admin stats error:', err)
     return res.status(500).json({ error: err.message })
   }
+
+  // Average feedback rating
+const { data: feedbackData } = await supabase
+  .from('feedback')
+  .select('rating')
+
+const totalFeedback = feedbackData?.length || 0
+const avgRating = totalFeedback > 0
+  ? Math.round(
+      (feedbackData.reduce((sum, f) => sum + f.rating, 0) / totalFeedback) * 10
+    ) / 10
+  : null
 })
 
 module.exports = router
