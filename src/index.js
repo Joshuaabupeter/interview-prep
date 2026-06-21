@@ -110,6 +110,7 @@ const speakRoutes = require('./routes/speak')
 const paymentRoutes = require('./routes/payment')
 const adminRoutes = require('./routes/admin')
 const feedbackRoutes = require('./routes/feedback')
+const talkToUsRoutes = require('./routes/talkToUs')
 
 app.use('/api/session', sessionLimiter, sessionRoutes)
 app.use('/api/questions', questionsLimiter, questionRoutes)
@@ -119,6 +120,7 @@ app.use('/api/speak', speakRoutes)
 app.use('/api/payment', paymentRoutes)
 app.use('/api/admin', adminRoutes)
 app.use('/api/feedback', feedbackRoutes)
+app.use('/api/talk-to-us', talkToUsRoutes)
 
 // ─── Data Privacy Cleanup Cron — runs every hour ──────────
 cron.schedule('0 * * * *', async () => {
