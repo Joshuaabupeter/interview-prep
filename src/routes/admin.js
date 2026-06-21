@@ -99,6 +99,14 @@ const avgRating = totalFeedback > 0
       (feedbackData.reduce((sum, f) => sum + f.rating, 0) / totalFeedback) * 10
     ) / 10
   : null
+
+  // General feedback / talk to us
+const { data: talkToUsData, count: talkToUsCount } = await supabase
+  .from('general_feedback')
+  .select('*', { count: 'exact' })
+  .order('created_at', { ascending: false })
+  .limit(10)
+  
 })
 
 module.exports = router
