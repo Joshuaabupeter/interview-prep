@@ -46,6 +46,11 @@ const corsOptions = {
 app.use(cors(corsOptions))
 app.options('*', cors(corsOptions))
 
+const authenticate = require('./middleware/auth')
+
+// Apply after CORS, before all routes
+app.use(authenticate)
+
 // ─── Rate Limiting ────────────────────────────────────────
 
 // Global — all routes
