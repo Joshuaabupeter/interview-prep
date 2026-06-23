@@ -39,17 +39,21 @@ const corsOptions = {
     }
   },
   methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', "x-api-key"],
   credentials: true
 }
 
 app.use(cors(corsOptions))
+
 app.options('*', cors(corsOptions))
 
 const authenticate = require('./middleware/auth')
 
 // Apply after CORS, before all routes
 app.use(authenticate)
+
+
+
 
 // ─── Rate Limiting ────────────────────────────────────────
 
