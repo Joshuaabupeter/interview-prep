@@ -5,7 +5,16 @@ const supabase = require('../lib/supabase')
 const crypto = require('crypto')
 const { Resend } = require('resend')
 
+
+const derivePlanFromAmount = (amount) => {
+  // Amount is in kobo (100 kobo = 1 Naira)
+  if (amount >= 2500000) return { plan: 'monthly', credits: 50 }
+  if (amount >= 100000) return { plan: 'session', credits: 1 }
+  return null
+}
+
 const resend = new Resend(process.env.RESEND_API_KEY)
+
 
 // POST /api/payment/verify
 // express.json() inline — works regardless of global middleware order
@@ -30,25 +39,16 @@ router.post('/verify', express.json(), async (req, res) => {
     if (transaction.status !== 'success') return res.status(400).json({ error: 'Payment not successful' })
 
     // 3. SECURE PLAN DERIVATION: Derive plan from the actual verified amount
-    const derivePlanFromAmount = (amount) => {
-      // amount is in kobo (e.g., 2500000 = ₦25,000)
-      if (amount >= 2500000) return { plan: 'monthly', credits: 50 }
-      if (amount >= 100000) return { plan: 'session', credits: 1 }
-      return null 
-    }
-
     const derived = derivePlanFromAmount(transaction.amount)
-    if (!derived) {
-      return res.status(400).json({ error: 'Payment amount does not match any valid plan.' })
-    }
-
-    const { plan, credits } = derived
-    const expirationDate = plan === 'monthly'
-      ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
-      : null
+if (!derived) {
+  return res.status(400).json({ error: 'Payment amount does not match any valid plan.' })
+}
+const { plan, credits } = derived
+const expirationDate = plan === 'monthly'
+  ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+  : null
 
     // ... Proceed to your existing Supabase insert logic below this ...
-
     const { data: payment, error: paymentError } = await supabase
       .from('payments')
       .insert({
@@ -265,13 +265,15 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
       const transaction = event.data
       const reference = transaction.reference
       const customerEmail = transaction.customer.email
-      const plan = transaction.metadata?.custom_fields?.find(
-        f => f.variable_name === 'plan'
-      )?.value || 'session'
-      const credits = plan === 'monthly' ? 50 : 1
-      const expirationDate = plan === 'monthly'
-        ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
-        : null
+       const derived = derivePlanFromAmount(transaction.amount)
+if (!derived) {
+  console.log(`Webhook: unrecognized amount ${transaction.amount}, skipping`)
+  return res.status(200).json({ status: 'success' })
+}
+const { plan, credits } = derived
+const expirationDate = plan === 'monthly'
+  ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+  : null
 
       console.log(`Webhook received: ${reference} — granting ${credits} credits`)
 
