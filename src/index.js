@@ -1,6 +1,6 @@
 // ─── SENTRY INITIALIZATION (MUST BE FIRST) ───────────────────
 const Sentry = require('@sentry/node')
-
+ 
 if (process.env.SENTRY_DSN) {
   Sentry.init({
     dsn: process.env.SENTRY_DSN,
@@ -11,48 +11,51 @@ if (process.env.SENTRY_DSN) {
   console.log('Sentry warning: SENTRY_DSN environment variable not found.')
 }
 // ─────────────────────────────────────────────────────────────
-
+ 
 require('dotenv').config()
-
+ 
 const express = require('express')
-
+ 
 const cors = require('cors')
 const rateLimit = require('express-rate-limit')
 const cron = require('node-cron')
-
+ 
 const app = express()
 app.set('trust proxy', 1)
 const PORT = process.env.PORT || 3000
 
-// ─── CORS — must be before all routes ─────────────────────
+/ ─── CORS — must be before all routes ─────────────────────
+const ALLOWED_ORIGINS = [
+  'https://rolematch.co',
+  'https://www.rolematch.co',
+  process.env.FRONTEND_URL,
+  'http://localhost:3000',
+  'http://localhost:5173',
+].filter(Boolean)
+ 
 const corsOptions = {
   origin(origin, callback) {
-    if (
-      !origin ||
-      origin.endsWith('.lovable.app') ||
-      origin.startsWith('http://localhost')
-    ) {
+    if (!origin) return callback(null, true)
+ 
+    if (ALLOWED_ORIGINS.includes(origin)) {
       callback(null, true)
     } else {
-      console.log('Blocked origin:', origin)
-      callback(null, true) // temporarily allow all during development
+      console.warn(`CORS blocked origin: ${origin}`)
+      callback(new Error(`Origin ${origin} not allowed by CORS`))
     }
   },
   methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', "x-api-key"],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'x-api-key'],
   credentials: true
 }
-
+ 
 app.use(cors(corsOptions))
-
 app.options('*', cors(corsOptions))
 
 const authenticate = require('./middleware/auth')
 
 // Apply after CORS, before all routes
 app.use(authenticate)
-
-
 
 
 // ─── Rate Limiting ────────────────────────────────────────
