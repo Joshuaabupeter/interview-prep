@@ -21,6 +21,12 @@
     "node-cron": "^3.0.3",
     "express-rate-limit": "^7.4.1"
   },
+  {
+  "overrides": {
+    "undici": "^8.5.0",
+    "ws": "^8.21.0"
+  }
+}
   "devDependencies": {
     "nodemon": "^3.1.7"
   },
