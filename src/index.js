@@ -24,7 +24,7 @@ const app = express()
 app.set('trust proxy', 1)
 const PORT = process.env.PORT || 3000
 
-/ ─── CORS — must be before all routes ─────────────────────
+// ─── CORS — must be before all routes ─────────────────────
 const ALLOWED_ORIGINS = [
   'https://rolematch.co',
   'https://www.rolematch.co',
