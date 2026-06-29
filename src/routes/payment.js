@@ -300,7 +300,7 @@ const expirationDate = plan === 'monthly'
           await resend.emails.send({
             from: process.env.FROM_EMAIL,
             to: customerEmail.toLowerCase().trim(),
-            subject: 'Payment confirmed — RoleMatch',
+            subject: 'Payment confirmed | RoleMatch',
             html: `
               <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; background: #0a0a0f; color: #e8e8e0;">
                 <p style="color: #c8a96e; font-weight: bold; text-transform: uppercase; font-size: 12px; letter-spacing: 0.05em;">Transaction Receipt</p>
